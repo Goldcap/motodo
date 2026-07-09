@@ -8,9 +8,9 @@ compact banner every time you open a login shell (e.g. SSH into a server).
 
 ```
   ┏━ TODO ━ 3 open ━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ○ Rename originals-dev minions off the -temp0N scheme   due 2026-07-10
-  ○ ci.appsumo.com reverse proxy                          due today
-  ○ jenkins reverse proxy
+  ○ Renew the TLS cert before it expires        due 2026-07-10
+  ○ Reply to the on-call handoff email          due today
+  ○ Write tests for the new parser
   ┗━ edit with: todo add/done/rm
 ```
 
