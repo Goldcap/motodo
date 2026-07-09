@@ -1,0 +1,4 @@
+# Personal task data never belongs in the repo
+.todos
+*.todos
+*.tmp

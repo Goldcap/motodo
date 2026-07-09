@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# todo — a tiny login/MOTD todo list.
+# Data file: ~/.todos   (one task per line:  id|status|added|due|text ; status=open|done, due may be '-')
+#
+# Usage:
+#   todo                      list open tasks
+#   todo add "text" [--due YYYY-MM-DD|tomorrow|"next monday"]
+#   todo done <id>            mark a task complete
+#   todo rm <id>              delete a task
+#   todo all                  list open + done
+#   todo banner               compact box for login (prints nothing if no open tasks)
+
+DB="${TODO_DB:-$HOME/.todos}"
+[ -f "$DB" ] || : > "$DB"
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  B=$'\033[1m'; D=$'\033[2m'; R=$'\033[31m'; Y=$'\033[33m'; G=$'\033[32m'; C=$'\033[36m'; X=$'\033[0m'
+else
+  B= ; D= ; R= ; Y= ; G= ; C= ; X= ;
+fi
+today=$(date +%F)
+
+die(){ echo "todo: $*" >&2; exit 1; }
+next_id(){ awk -F'|' 'BEGIN{m=0}{if($1+0>m)m=$1+0}END{print m+1}' "$DB"; }
+has_id(){ awk -F'|' -v id="$1" '$1==id{f=1}END{exit f?0:1}' "$DB"; }
+
+# echo a due annotation, colorized by urgency
+due_note(){ # $1 = due (YYYY-MM-DD or '-')
+  local due="$1"
+  [ "$due" = '-' ] && return 0
+  if [ "$due" \< "$today" ]; then printf '%s' "${R}${B}OVERDUE ${due}${X}"
+  elif [ "$due" = "$today" ]; then printf '%s' "${Y}${B}due today${X}"
+  else printf '%s' "${D}due ${due}${X}"; fi
+}
+
+cmd_add(){
+  local due='-' ; local -a args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --due)   due="${2:?--due needs a date}"; shift 2;;
+      --due=*) due="${1#--due=}"; shift;;
+      *)       args+=("$1"); shift;;
+    esac
+  done
+  local text="${args[*]}"
+  [ -n "$text" ] || die "nothing to add — try: todo add \"do the thing\" --due tomorrow"
+  text="${text//|/ }"
+  if [ "$due" != '-' ]; then
+    due=$(date -d "$due" +%F 2>/dev/null) || die "unrecognized --due date"
+  fi
+  local id; id=$(next_id)
+  printf '%s|open|%s|%s|%s\n' "$id" "$today" "$due" "$text" >> "$DB"
+  printf '%s added%s [#%s] %s' "$G" "$X" "$id" "$text"
+  [ "$due" != '-' ] && printf '  (%s)' "$(due_note "$due")"
+  echo
+}
+
+cmd_done(){ local id="${1:?usage: todo done <id>}"; has_id "$id" || die "no task #$id"
+  awk -F'|' -v id="$id" 'BEGIN{OFS="|"} $1==id{$2="done"} {print}' "$DB" >"$DB.tmp" && mv "$DB.tmp" "$DB"
+  echo "${G}✓ done${X} [#$id]"; }
+
+cmd_rm(){ local id="${1:?usage: todo rm <id>}"; has_id "$id" || die "no task #$id"
+  awk -F'|' -v id="$id" '$1!=id' "$DB" >"$DB.tmp" && mv "$DB.tmp" "$DB"
+  echo "${D}removed [#$id]${X}"; }
+
+cmd_ls(){ # $1=all?
+  local show_done="${1:-}" any=
+  while IFS='|' read -r id st added due text; do
+    [ "$st" = open ] || { [ "$show_done" = all ] || continue; }
+    any=1
+    if [ "$st" = done ]; then
+      printf '  %s✓ [#%s] %s%s\n' "$D" "$id" "$text" "$X"
+    else
+      printf '  %s○%s [#%s] %s' "$C" "$X" "$id" "$text"
+      [ "$due" != '-' ] && printf '  %s' "$(due_note "$due")"
+      echo
+    fi
+  done < "$DB"
+  [ -n "$any" ] || echo "  ${D}(nothing here — nice)${X}"
+}
+
+cmd_banner(){
+  local -a lines=()
+  local id st added due text n=0
+  while IFS='|' read -r id st added due text; do
+    [ "$st" = open ] || continue
+    n=$((n+1))
+    local note=""; [ "$due" != '-' ] && note="  $(due_note "$due")"
+    lines+=("  ${C}○${X} ${text}${note}")
+  done < "$DB"
+  [ "$n" -eq 0 ] && return 0
+  echo
+  printf '%s  ┏━ TODO ━ %s open ━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$B" "$n" "$X"
+  local l; for l in "${lines[@]}"; do printf '%s\n' "$l"; done
+  printf '%s  ┗━ %sedit with: %stodo add/done/rm%s%s%s\n' "$B" "$D" "$C" "$X" "$B" "$X"
+  echo
+}
+
+case "${1:-ls}" in
+  add)            shift; cmd_add "$@";;
+  done|do|d)      shift; cmd_done "$@";;
+  rm|del|remove)  shift; cmd_rm "$@";;
+  all|-a)         cmd_ls all;;
+  banner)         cmd_banner;;
+  ls|list|"")     cmd_ls;;
+  -h|--help|help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//';;
+  *)              die "unknown command '$1' (try: todo --help)";;
+esac
